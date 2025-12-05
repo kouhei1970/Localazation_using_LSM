@@ -1,0 +1,151 @@
+\documentclass[a4j, 11pt]{jsarticle}
+
+%--- Preamble: 使用するパッケージ ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{bm} % 太字のベクトル表現をきれいにするため
+
+%--- ページレイアウト設定 ---
+\geometry{left=25mm, right=25mm, top=25mm, bottom=25mm}
+
+%--- Document Information ---
+\title{非線形最小二乗法によるドローン位置推定アルゴリズム}
+\author{Kouhei Ito}
+\date{2025年7月29日}
+
+
+%================================================%
+%               DOCUMENT START                   %
+%================================================%
+\begin{document}
+
+\maketitle
+
+この資料では、複数の地上点からの観測データを用いてドローンの3次元位置を推定する問題について、その数学的背景とアルゴリズムを解説します。特に、非線形最小二乗問題を解くための中核となる\textbf{正規方程式}の導出を理解することを目標とします。
+
+\hrulefill
+\section{問題設定}
+
+ここで取り組むのは、3箇所以上の\textbf{座標が既知の地上観測点} $P_i = (x_i, y_i, z_i)$ から、\textbf{未知の座標} $D = (x, y, z)$ にいるドローンを観測する状況です。
+
+\begin{itemize}
+    \item \textbf{既知（入力）}:
+        \begin{itemize}
+            \item 各観測点の3次元座標 $P_i$
+            \item 各観測点からドローンまでの観測値セット（距離 $d_i$, 方位角 $\theta_i$, 仰角 $\phi_i$）
+        \end{itemize}
+    \item \textbf{未知（出力）}:
+        \begin{itemize}
+            \item ドローンの3次元座標 $D(x, y, z)$
+        \end{itemize}
+\end{itemize}
+観測には必ず誤差が含まれるため、3点以上の冗長な情報を用いて、統計的に最も確からしい解を求める必要があります。そのための強力なツールが\textbf{最小二乗法}です。
+
+\hrulefill
+\section{基本方針: 最小二乗法}
+
+最小二乗法とは、\textbf{「実際の観測値」と「推定した位置から計算される理論値」の差（残差）の二乗和 $S$ が最小になる点を探す}という考え方です。
+
+目的は、以下の目的関数 $S$ を最小化する $\bm{x}=[x, y, z]^T$ を見つけ出すことにあります。
+\[
+S(\bm{x}) = \sum_{i=1}^{N} \left( (d_{\text{obs}, i} - d_{\text{calc}, i})^2 + ( \theta_{\text{obs}, i} - \theta_{\text{calc}, i})^2 + (\phi_{\text{obs}, i} - \phi_{\text{calc}, i})^2 \right) \rightarrow \min
+\]
+※ 実際の応用では、各観測値の信頼度に応じて重み付けを行うのが一般的ですが、ここでは簡単のため重みは均一とします。
+
+\hrulefill
+\section{課題: 非線形性}
+
+理論値（$d_{\text{calc}}, \theta_{\text{calc}}, \phi_{\text{calc}}$）を計算する\textbf{観測方程式}は、ドローンの未知座標 $\bm{x} = [x, y, z]^T$ を変数とする以下の関数で与えられます。
+\[
+d_{\text{calc}} = \sqrt{(x - x_i)^2 + (y - y_i)^2 + (z - z_i)^2}
+\]
+\[
+\theta_{\text{calc}} = \operatorname{atan2}(y - y_i, x - x_i)
+\]
+\[
+\phi_{\text{calc}} = \operatorname{atan}\left(\frac{z - z_i}{\sqrt{(x - x_i)^2 + (y - y_i)^2}}\right)
+\]
+これらの式は平方根や三角関数を含んでおり、未知数 $\bm{x}$ に対して\textbf{非線形}となっています。そのため、単純な連立一次方程式のように解析的に解を求めることはできません。
+
+\hrulefill
+\section{解決策: ガウス・ニュートン法による反復解法}
+
+この非線形問題を解くために、\textbf{ガウス・ニュートン法}という反復アルゴリズムを用います。これは、以下の手順で少しずつ真の解に近づいていく手法です。
+\begin{enumerate}
+    \item まず、解の\textbf{初期推定値} $\bm{x}_k$ を与えます。
+    \item 現在の推定値の周りで、複雑な非線形問題を単純な\textbf{線形問題として近似}します。
+    \item その線形問題における最適解（\textbf{更新量} $\Delta \bm{x}$）を求めます。この計算に\textbf{正規方程式}が使われます。
+    \item 推定値を更新します: $\bm{x}_{k+1} = \bm{x}_k + \Delta \bm{x}$。
+    \item 解が収束するまで、ステップ2から4を繰り返します。
+\end{enumerate}
+
+\hrulefill
+\section{アルゴリズムの核心: 正規方程式の導出}
+
+ここが本資料の最も重要な部分です。各反復ステップで、どのようにして最適な更新量 $\Delta \bm{x}$ を求めるのかを数学的に見ていきましょう。
+
+\subsection{線形近似}
+
+まず、残差ベクトル $\bm{r}(\bm{x})$ を定義します。これは、全ての観測値と理論値の差を並べたベクトルとなります。
+\[
+\bm{r}(\bm{x}) =
+\begin{bmatrix}
+\vdots \\
+d_{\text{obs}, i} - d_{\text{calc}, i}(\bm{x}) \\
+\theta_{\text{obs}, i} - \theta_{\text{calc}, i}(\bm{x}) \\
+\phi_{\text{obs}, i} - \phi_{\text{calc}, i}(\bm{x}) \\
+\vdots
+\end{bmatrix}
+\]
+現在の推定値 $\bm{x}_k$ から、微小な更新量 $\Delta \bm{x}$ だけ動いた新しい点 $\bm{x}_k + \Delta \bm{x}$ での残差を知るため、$\bm{r}(\bm{x})$ を\textbf{テイラー展開}を用いて一次までで線形近似します。
+\[
+\bm{r}(\bm{x}_k + \Delta \bm{x}) \approx \bm{r}(\bm{x}_k) + \frac{\partial \bm{r}}{\partial \bm{x}} \bigg|_{\bm{x}_k} \Delta \bm{x}
+\]
+ここで、$\frac{\partial \bm{r}}{\partial \bm{x}}$ は残差の\textbf{ヤコビ行列}を表します。残差の定義 $\bm{r}(\bm{x}) = \bm{y}_{\text{obs}} - \bm{h}(\bm{x})$ （$\bm{h}(\bm{x})$は理論値を計算する関数）を考えると、そのヤコビアンは $-J$ となります。（$J = \frac{\partial \bm{h}}{\partial \bm{x}}$）よって、近似式は次のように書けます。
+\[
+\bm{r}(\bm{x}_k + \Delta \bm{x}) \approx \bm{r}(\bm{x}_k) - J_k \Delta \bm{x}
+\]
+（$J_k$ は $\bm{x}_k$ で評価したヤコビ行列）
+
+\subsection{残差二乗和の最小化}
+
+この線形近似した残差を用いて、残差二乗和 $S$ を $\Delta \bm{x}$ の関数として表現します。
+\begin{align*}
+S(\Delta \bm{x}) &= \bm{r}(\bm{x}_k + \Delta \bm{x})^T \bm{r}(\bm{x}_k + \Delta \bm{x}) \\
+&\approx (\bm{r}_k - J_k \Delta \bm{x})^T (\bm{r}_k - J_k \Delta \bm{x}) \\
+&= \bm{r}_k^T \bm{r}_k - \bm{r}_k^T J_k \Delta \bm{x} - \Delta \bm{x}^T J_k^T \bm{r}_k + \Delta \bm{x}^T J_k^T J_k \Delta \bm{x} \\
+&= \bm{r}_k^T \bm{r}_k - 2 \bm{r}_k^T J_k \Delta \bm{x} + \Delta \bm{x}^T (J_k^T J_k) \Delta \bm{x}
+\end{align*}
+
+\subsection{微分による極値計算}
+
+この式は、$\Delta \bm{x}$ に関する二次関数となっています。この関数が最小値をとる点では傾きがゼロになるため、$S$ を $\Delta \bm{x}$ で微分し、その結果をゼロと置きます。
+\[
+\frac{\partial S}{\partial \Delta \bm{x}} = -2 J_k^T \bm{r}_k + 2 (J_k^T J_k) \Delta \bm{x} = 0
+\]
+
+\subsection{正規方程式}
+
+上式を整理することで、各反復ステップで解くべき、線形で美しい\textbf{正規方程式}が導出されます。
+\begin{equation}
+\fbox{$(J_k^T J_k) \Delta \bm{x} = J_k^T \bm{r}_k$}
+\end{equation}
+この方程式は、$3 \times 3$ の係数行列を持つ連立一次方程式であり、逆行列を求めるなどして $\Delta \bm{x}$ について解くことができます。
+
+\hrulefill
+\section{実装に向けたアルゴリズムのまとめ}
+
+\begin{enumerate}
+    \item \textbf{初期化}: ドローンの位置 $\bm{x}_0$ を設定します。反復カウンタ $k=0$ とします。
+    \item \textbf{残差計算}: 現在の位置 $\bm{x}_k$ を用いて理論値を計算し、残差ベクトル $\bm{r}_k$ を求めます。
+    \item \textbf{ヤコビ行列計算}: 現在の位置 $\bm{x}_k$ で観測方程式を偏微分し、ヤコビ行列 $J_k$ を計算します。
+    \item \textbf{正規方程式の求解}: 正規方程式 $(J_k^T J_k) \Delta \bm{x} = J_k^T \bm{r}_k$ を $\Delta \bm{x}$ について解きます。
+    \item \textbf{推定値の更新}: $\bm{x}_{k+1} = \bm{x}_k + \Delta \bm{x}$ として位置を更新します。
+    \item \textbf{収束判定}: $\Delta \bm{x}$ のノルムが事前に決めた微小な閾値より小さくなれば、$\bm{x}_{k+1}$ を最終的な解として計算を終了します。そうでなければ、$k \leftarrow k+1$ としてステップ2に戻ります。
+\end{enumerate}
+
+\end{document}
+%================================================%
+%                 DOCUMENT END                   %
+%================================================%
